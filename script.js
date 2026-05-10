@@ -2,11 +2,13 @@ const container = document.getElementById('videoContainer');
 const addBtn = document.getElementById('add-btn');
 let db;
 
-// 初始化数据库
-const request = indexedDB.open("VideoPathDB", 6); // 升级版本
+// 初始化数据库 - 建议增加版本号以确保清理旧的错误路径数据
+const request = indexedDB.open("VideoPathDB", 6); 
 request.onupgradeneeded = (e) => {
     db = e.target.result;
-    if (!db.objectStoreNames.contains("paths")) db.createObjectStore("paths", { autoIncrement: true });
+    if (!db.objectStoreNames.contains("paths")) {
+        db.createObjectStore("paths", { autoIncrement: true });
+    }
 };
 request.onsuccess = (e) => { db = e.target.result; loadSavedPaths(); };
 
@@ -25,9 +27,7 @@ function loadSavedPaths() {
 
 function renderVideo(nativePath) {
     if (!nativePath) return;
-
-    // 关键：将磁盘绝对路径转换为 WebView 协议路径
-    // 例如：/storage/emulated/0/video.mp4 -> https://localhost/_capacitor_file_/storage/emulated/0/video.mp4
+    // 使用 Capacitor 转换路径，确保 WebView 能跨域读取本地文件
     const videoUrl = window.Capacitor ? window.Capacitor.convertFileSrc(nativePath) : nativePath;
     
     const card = document.createElement('div');
@@ -44,11 +44,12 @@ async function pickVideos() {
     try {
         const { FilePicker } = window.Capacitor.Plugins;
         
-        // 使用 pickFiles 配合 video/* 类型，这比 pickVideos 更容易拿到物理路径
-        const result = await FilePicker.pickFiles({
-            types: ['video/*'],
-            multiple: true,
-            readData: false
+        // 使用 pickFiles 而不是 pickVideos 
+        // 在 Android 上这通常能提供更好的多选支持和真实路径返回
+        const result = await FilePicker.pickFiles({ 
+            types: ['video/*'], 
+            multiple: true, 
+            readData: false 
         });
         
         if (result.files && result.files.length > 0) {
@@ -56,31 +57,22 @@ async function pickVideos() {
             const store = transaction.objectStore("paths");
 
             for (const file of result.files) {
-                let finalPath = file.path;
-
-                // 路径合法性检查
-                if (finalPath) {
-                    // 如果路径包含 '/cache/'，说明这依然是个临时文件，重启后会消失
-                    if (finalPath.includes('/cache/')) {
-                        console.warn("警告：获取到的是临时缓存路径，重启可能失效。请尝试从“内部存储”而非“最近”选择文件。");
-                    }
-                    
-                    store.add(finalPath);
-                    renderVideo(finalPath);
+                // file.path 必须是形如 /storage/emulated/0/... 的绝对路径
+                if (file.path) {
+                    store.add(file.path);
+                    renderVideo(file.path);
                 }
             }
             addBtn.classList.add('hidden');
         }
     } catch (err) { 
         console.error(err);
-        alert("选择失败，请确保已授予“所有文件访问权限”。"); 
+        alert("选择失败。请确保在弹出的权限页面中开启了“允许访问所有文件”。"); 
     }
 }
 
-// ... 剩下的播放控制逻辑 (addBtn.onclick, container.onclick, observer) 保持不变 ...
-
 addBtn.onclick = (e) => { e.stopPropagation(); pickVideos(); };
-// 点击屏幕切换按钮和播放状态
+
 container.onclick = (e) => {
     addBtn.classList.toggle('hidden');
     const cards = document.querySelectorAll('.video-card');
