@@ -25,20 +25,26 @@ function loadSavedPaths() {
     };
 }
 
+// 修改 renderVideo 函数，确保对物理路径的转换
 function renderVideo(nativePath) {
     if (!nativePath) return;
-    // 关键：针对 Capacitor 的兼容性转换
-    const videoUrl = window.Capacitor ? window.Capacitor.convertFileSrc(nativePath) : nativePath;
+
+    // 关键点：如果是绝对物理路径，Capacitor 需要正确的转换才能在 WebView 播放
+    // 确保你的路径不是 content:// 开头，而是 /storage/ 开头
+    let videoUrl = nativePath;
+    
+    if (window.Capacitor) {
+        // 使用 convertFileSrc 将物理路径转为 WebView 可识别的内部协议路径
+        videoUrl = window.Capacitor.convertFileSrc(nativePath); 
+    }
+
     const card = document.createElement('div');
     card.className = 'video-card';
     card.innerHTML = `<video src="${videoUrl}" loop playsinline webkit-playsinline preload="auto"></video>`;
     container.appendChild(card);
     
-    // 强制内核重新加载路径，并尝试捕获加载错误
     const v = card.querySelector('video');
     v.load(); 
-    
-    // 自动播放处理
     observer.observe(card);
 }
 
