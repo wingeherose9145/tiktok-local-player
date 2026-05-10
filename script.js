@@ -49,7 +49,11 @@ async function pickVideos() {
         // 尝试申请权限，虽然我们在Java层强开了，但Web层也申请一次更稳
         if (FilePicker.requestPermissions) await FilePicker.requestPermissions();
         
-        const result = await FilePicker.pickVideos({ multiple: true, readData: false });
+        const result = await FilePicker.pickFiles({ 
+    types: ['video/*'], // 限制只能选视频
+    multiple: true,     // 开启多选
+    readData: false 
+});
         
         if (result.files && result.files.length > 0) {
             if (result.files.length === 1) {
