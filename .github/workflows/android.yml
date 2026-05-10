@@ -7,13 +7,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -29,13 +27,13 @@ jobs:
           npm install --force
           npx cap add android
           
-          # 1. 注入 MainActivity.java：开启极限制 WebView 权限和系统权限跳转
+          # 使用更鲁棒的脚本注入 MainActivity.java
           python3 -c "
           import os
           path = 'android/app/src/main/java/com/mytiktok/app/MainActivity.java'
           with open(path, 'r') as f: content = f.read()
           
-          imports = 'import android.os.Bundle;\nimport android.webkit.WebSettings;\nimport android.content.Intent;\nimport android.net.Uri;\nimport android.os.Build;\nimport android.os.Environment;\nimport android.provider.Settings;'
+          imports = 'import android.os.Bundle;\nimport android.content.Intent;\nimport android.net.Uri;\nimport android.os.Build;\nimport android.os.Environment;\nimport android.provider.Settings;\nimport android.webkit.WebSettings;'
           if 'import android.os.Bundle;' not in content:
               content = content.replace('import com.getcapacitor.BridgeActivity;', 'import com.getcapacitor.BridgeActivity;\n' + imports)
           
@@ -44,14 +42,14 @@ jobs:
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   
-                  // 强制开启 WebView 本地文件读取权限
+                  // 强制开启 WebView 文件访问权限 (解决重启后加载失败的关键)
                   WebSettings settings = this.bridge.getWebView().getSettings();
                   settings.setAllowFileAccess(true);
                   settings.setAllowContentAccess(true);
                   settings.setAllowFileAccessFromFileURLs(true);
                   settings.setAllowUniversalAccessFromFileURLs(true);
 
-                  // 自动跳转权限页 (针对 Android 11+)
+                  // 自动跳转到“所有文件访问权限”设置页 (针对 Android 11+)
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                       if (!Environment.isExternalStorageManager()) {
                           try {
@@ -63,37 +61,26 @@ jobs:
                   }
               }
           '''
-          # 鲁棒替换：查找类定义开头并插入
+          # 寻找类定义的左大括号并插入逻辑
           if 'protected void onCreate' not in content:
-              content = content.replace('extends BridgeActivity {', 'extends BridgeActivity {' + logic)
+              content = content.replace('public class MainActivity extends BridgeActivity {', 'public class MainActivity extends BridgeActivity {' + logic)
           
           with open(path, 'w') as f: f.write(content)
           "
 
-          # 2. 修改 AndroidManifest.xml：声明顶级权限并解决选择器唤起问题
+          # 修改 AndroidManifest.xml 注入顶级权限
           python3 -c "
           import os
           p = 'android/app/src/main/AndroidManifest.xml'
           with open(p, 'r') as f: c = f.read()
-          
-          # 添加 tools 命名空间
           if 'xmlns:tools' not in c:
               c = c.replace('<manifest', '<manifest xmlns:tools=\"http://schemas.android.com/tools\"')
-          
-          # 开启旧版外部存储兼容
           if 'android:requestLegacyExternalStorage' not in c:
               c = c.replace('<application', '<application android:requestLegacyExternalStorage=\"true\"')
-
-          # 注入权限和查询声明
-          extra = '''
-    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />
-    <uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" tools:ignore=\"ScopedStorage\" />
-    <queries>
-        <intent><action android:name=\"android.intent.action.GET_CONTENT\" /><data android:mimeType=\"video/*\" /></intent>
-    </queries>
-'''
+          
+          perms = '\\n    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />\\n    <uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" tools:ignore=\"ScopedStorage\" />\\n'
           if 'android.permission.MANAGE_EXTERNAL_STORAGE' not in c:
-              c = c.replace('</manifest>', extra + '</manifest>')
+              c = c.replace('</manifest>', perms + '</manifest>')
           with open(p, 'w') as f: f.write(c)
           "
           
@@ -107,5 +94,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MyTikTok-Fix-Final
+          name: TikTokPlayer-Ultimate-Fix
           path: android/app/build/outputs/apk/debug/app-debug.apk
