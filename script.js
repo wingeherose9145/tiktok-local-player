@@ -3,14 +3,13 @@ const addBtn = document.getElementById('add-btn');
 let db;
 
 // 初始化数据库
-const request = indexedDB.open("VideoPathDB", 5); // 升级版本确保结构干净
+const request = indexedDB.open("VideoPathDB", 6); // 升级版本
 request.onupgradeneeded = (e) => {
     db = e.target.result;
     if (!db.objectStoreNames.contains("paths")) db.createObjectStore("paths", { autoIncrement: true });
 };
 request.onsuccess = (e) => { db = e.target.result; loadSavedPaths(); };
 
-// 加载保存路径
 function loadSavedPaths() {
     const transaction = db.transaction(["paths"], "readonly");
     const store = transaction.objectStore("paths");
@@ -19,25 +18,18 @@ function loadSavedPaths() {
         container.innerHTML = '';
         if (paths && paths.length > 0) {
             addBtn.classList.add('hidden');
-            // 解决“第一台手机占位不播”：增加一个显式的加载序列
             paths.forEach(path => renderVideo(path));
         }
     };
 }
 
-// 修改 renderVideo 函数，确保对物理路径的转换
 function renderVideo(nativePath) {
     if (!nativePath) return;
 
-    // 关键点：如果是绝对物理路径，Capacitor 需要正确的转换才能在 WebView 播放
-    // 确保你的路径不是 content:// 开头，而是 /storage/ 开头
-    let videoUrl = nativePath;
+    // 关键：将磁盘绝对路径转换为 WebView 协议路径
+    // 例如：/storage/emulated/0/video.mp4 -> https://localhost/_capacitor_file_/storage/emulated/0/video.mp4
+    const videoUrl = window.Capacitor ? window.Capacitor.convertFileSrc(nativePath) : nativePath;
     
-    if (window.Capacitor) {
-        // 使用 convertFileSrc 将物理路径转为 WebView 可识别的内部协议路径
-        videoUrl = window.Capacitor.convertFileSrc(nativePath); 
-    }
-
     const card = document.createElement('div');
     card.className = 'video-card';
     card.innerHTML = `<video src="${videoUrl}" loop playsinline webkit-playsinline preload="auto"></video>`;
@@ -48,37 +40,44 @@ function renderVideo(nativePath) {
     observer.observe(card);
 }
 
-// 选择视频 (增加对“只能加一个”手机的提示)
 async function pickVideos() {
     try {
         const { FilePicker } = window.Capacitor.Plugins;
-        // 尝试申请权限，虽然我们在Java层强开了，但Web层也申请一次更稳
-        if (FilePicker.requestPermissions) await FilePicker.requestPermissions();
         
-        const result = await FilePicker.pickFiles({ 
-    types: ['video/*'], // 限制只能选视频
-    multiple: true,     // 开启多选
-    readData: false 
-});
+        // 使用 pickFiles 配合 video/* 类型，这比 pickVideos 更容易拿到物理路径
+        const result = await FilePicker.pickFiles({
+            types: ['video/*'],
+            multiple: true,
+            readData: false
+        });
         
         if (result.files && result.files.length > 0) {
-            if (result.files.length === 1) {
-                // 如果用户反映只能加一个，这里给一个友好提示
-                console.log("此手机系统选择器可能不支持批量选择，请分次添加。");
-            }
-
             const transaction = db.transaction(["paths"], "readwrite");
             const store = transaction.objectStore("paths");
+
             for (const file of result.files) {
-                if (file.path) {
-                    store.add(file.path);
-                    renderVideo(file.path);
+                let finalPath = file.path;
+
+                // 路径合法性检查
+                if (finalPath) {
+                    // 如果路径包含 '/cache/'，说明这依然是个临时文件，重启后会消失
+                    if (finalPath.includes('/cache/')) {
+                        console.warn("警告：获取到的是临时缓存路径，重启可能失效。请尝试从“内部存储”而非“最近”选择文件。");
+                    }
+                    
+                    store.add(finalPath);
+                    renderVideo(finalPath);
                 }
             }
             addBtn.classList.add('hidden');
         }
-    } catch (err) { alert("选择失败或被取消，请检查手机文件管理权限是否开启。"); }
+    } catch (err) { 
+        console.error(err);
+        alert("选择失败，请确保已授予“所有文件访问权限”。"); 
+    }
 }
+
+// ... 剩下的播放控制逻辑 (addBtn.onclick, container.onclick, observer) 保持不变 ...
 
 addBtn.onclick = (e) => { e.stopPropagation(); pickVideos(); };
 // 点击屏幕切换按钮和播放状态
