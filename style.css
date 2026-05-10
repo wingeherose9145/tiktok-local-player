@@ -1,0 +1,50 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background-color: #000; overflow: hidden; }
+
+.video-container {
+    width: 100vw;
+    height: 100vh;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none; /* 隐藏滚动条 */
+}
+.video-container::-webkit-scrollbar { display: none; }
+
+.video-card {
+    width: 100%;
+    height: 100%;
+    scroll-snap-align: start;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* 保证比例，不拉伸 */
+}
+
+#add-btn {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 55px;
+    height: 55px;
+    background: rgba(254, 44, 85, 0.8);
+    border-radius: 50%;
+    color: white;
+    font-size: 32px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 999;
+    transition: opacity 0.5s; /* 消失时的淡出效果 */
+}
+
+/* 隐藏状态 */
+.hidden {
+    opacity: 0 !important;
+    pointer-events: none;
+}

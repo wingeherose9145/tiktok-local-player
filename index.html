@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>我的全屏播放器</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* 额外增加一点内联样式，确保基础容器铺满全屏 */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="video-container" id="videoContainer">
+        <div id="empty-state">
+            <p>暂无视频</p>
+            <p style="font-size: 14px; margin-top: 10px; color: #444;">点击右下角按钮添加手机视频</p>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" accept="video/*" multiple style="display: none;">
+    
+    <div id="add-btn">+</div>
+
+    <script src="script.js"></script>
+</body>
+</html>

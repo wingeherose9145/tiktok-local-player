@@ -1,0 +1,108 @@
+name: Build Android APK
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build Web Assets
+        run: |
+          mkdir -p www
+          cp index.html style.css script.js www/ || true
+          
+      - name: Capacitor Android Setup
+        run: |
+          npm install --force
+          npx cap add android
+          
+          # 使用 Python 精准注入最终版 MainActivity.java，确保极限制处理
+          python3 -c "
+          import os
+          path = 'android/app/src/main/java/com/mytiktok/app/MainActivity.java'
+          with open(path, 'r') as f: content = f.read()
+          
+          # 1. 注入 Android 类库引用
+          imports = 'import android.os.Bundle;\nimport android.content.Intent;\nimport android.net.Uri;\nimport android.os.Build;\nimport android.os.Environment;\nimport android.provider.Settings;\nimport android.graphics.Color;\nimport android.view.View;\nimport android.view.WindowManager;'
+          content = content.replace('import com.getcapacitor.BridgeActivity;', 'import com.getcapacitor.BridgeActivity;\n' + imports)
+          
+          # 2. 注入增强型 onCreate 逻辑
+          logic = '''
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  
+                  // A. 开启硬件加速
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+                  
+                  // B. 沉浸式全屏
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                      getWindow().getDecorView().setSystemUiVisibility(
+                          View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                      );
+                      getWindow().setStatusBarColor(Color.TRANSPARENT);
+                  }
+
+                  // C. 核心修复 (第一台手机)：强制开启所有 WebView 文件访问权限
+                  // 这是解决重启后路径拒绝访问的最后一招
+                  try {
+                      this.bridge.getWebView().getSettings().setAllowFileAccess(true);
+                      this.bridge.getWebView().getSettings().setAllowContentAccess(true);
+                  } catch (Exception e) {}
+
+                  // D. 自动跳转权限页 (针对 Android 11+)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                      if (!Environment.isExternalStorageManager()) {
+                          Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                          intent.setData(Uri.parse(\"package:\" + getPackageName()));
+                          startActivity(intent);
+                      }
+                  }
+              }
+          '''
+          # 替换空的类定义为带有逻辑的代码块
+          content = content.replace('public class MainActivity extends BridgeActivity {}', 'public class MainActivity extends BridgeActivity {' + logic + '}')
+          
+          with open(path, 'w') as f: f.write(content)
+          "
+
+          # 强制修改清单文件和应用属性 (针对第二台手机)
+          python3 -c "
+          import os
+          p = 'android/app/src/main/AndroidManifest.xml'
+          with open(p, 'r') as f: c = f.read()
+          if 'xmlns:tools' not in c:
+              c = c.replace('<manifest', '<manifest xmlns:tools=\"http://schemas.android.com/tools\"')
+          
+          # 关键增加：即使有 ScopedStorage，也强制允许旧外部存储标志 (兼容定制旧手机)
+          if 'requestLegacyExternalStorage=\"true\"' not in c:
+              c = c.replace('<application', '<application android:requestLegacyExternalStorage=\"true\"')
+          
+          perms = '\\n    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" />\\n    <uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" tools:ignore=\"ScopedStorage\" />\\n'
+          c = c.replace('</manifest>', perms + '</manifest>')
+          with open(p, 'w') as f: f.write(c)
+          "
+          
+          npx cap sync android
+
+      - name: Build Debug APK
+        run: |
+          cd android && chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyTikTok-Compatibility-Fix-v84
+          path: android/app/build/outputs/apk/debug/app-debug.apk
